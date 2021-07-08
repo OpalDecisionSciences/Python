@@ -556,7 +556,7 @@ final_rmse = np.sqrt(final_mse)
 # document everything, in a clear and concise presentation, with data visualizations and easy-to-remember statements
 
 
-'''
+''' 
 Implement a support vector regreesor using different kernels, comparing linear (varying values for C hyperparameter) and rbf (varying values for C and gamma hyperparameters)
 Do a compare between GridSearchCV and RandomizedSearchCV
 Add transformer in preparation pipeline to select only the most important attributes
