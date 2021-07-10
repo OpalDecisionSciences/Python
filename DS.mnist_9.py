@@ -45,6 +45,7 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.ensemble import RandomForestClassifier 
 from sklearn.multiclass import OneVsOneClassifier
 
+from sklearn.neighbors import KNeighborsClassifier
 
 BASE_PATH = '\\\\lgamsfs04\\\\fpanda\\bi\\'
 DATA_DIR = BASE_PATH + 'data\\'
@@ -213,6 +214,7 @@ plt.show()
 
 roc_auc_score(y_train_9, y_scores)
 
+''' Fix Me!
 # Create a Random Forest Classifier to compare SGD Classifier
 forest_clf = RandomForestClassifier(random_state=42)
 y_probas_forest = cross_val_predict(forest_clf, X_train, y_train_9, cv=3, method="predict_proba")
@@ -228,9 +230,9 @@ plt.legend(loc="lower right")
 plt.show()
 
 roc_auc_score(y_train_9, y_scores_forest)
+'''
 
-
-######## Create a multiclass classifier #########
+######## Create a multi-class classifier #########
 ######## Create a multinomial (multiclass) classifier #########
 # Random Forest and Naive Bayes can handle multiple classes directly; linear and svm are strictly binary
 # For multi-class classification Scikit-Learn automatically runs OvA, except for SVM classifiers which it runs OvO
@@ -292,16 +294,32 @@ np.fill_diagonal(norm_conf_mx, 0)
 plt.matshow(norm_conf_mx, cmap=plt.cm.gray)
 plt.show()
 
-# To Improve: we need to improve predicted class 8
-# you can write algorithm to help your count the number of closed loops and use this to feature engineer to aid the classifier
+# To Improve: we need to improve predicted class 8; we could gather more training data
+# you can write an algorithm to help you count the number of closed loops and use this for feature engineering to aid the classifier
 # you could also preprocess the images using Scikit-Image, Pillow, or OpenCV to make some patterns stand out more than others (i.e. closed loops)
 
-# Analyzing individual errors
+# Analyzing individual errors - as confusion matrix
+
 cl_a, cl_b = 3, 5
-x_aa = X_train[(y_train == cl_a) & (y_train_pred == cl_a)]
-x_ab = X_train[(y_train == cl_a) & (y_train_pred == cl_b)]
-x_ba = X_train[(y_train == cl_b) & (y_train_pred == cl_a)]
-x_bb = X_train[(y_train == cl_b) & (y_train_pred == cl_b)]
+X_aa = X_train[(y_train == cl_a) & (y_train_pred == cl_a)]
+X_ab = X_train[(y_train == cl_a) & (y_train_pred == cl_b)]
+X_ba = X_train[(y_train == cl_b) & (y_train_pred == cl_a)]
+X_bb = X_train[(y_train == cl_b) & (y_train_pred == cl_b)]
+
+def plot_digits(instances, images_per_row=10, **options):
+    size = 28
+    imges_per_row = min(len(instances), images_per_row)
+    images = [instance.reshape(size, size) for instance in instances]
+    n_rows = (len(instances) - 1) // images_per_row + 1
+    row_images = []
+    n_empty = n_rows * images_per_row - len(instances)
+    images.append(np.zeros((size, size * n_empty)))
+    for row in range(n_rows):
+        rimages = images[row * images_per_row : (row + 1) * images_per_row]
+        row_images.append(np.concatenate(rimages, axis=1))
+    image = np.concatenate(row_images, axis=0)
+    plt.imshow(image, cmap = mpl.cm.binary, **options)
+    plt.axis("off")
 
 plt.figure(figsize=(8, 8))
 plt.subplot(221); plot_digits(X_aa[:25], images_per_row=5)
@@ -309,3 +327,61 @@ plt.subplot(222); plot_digits(X_ab[:25], images_per_row=5)
 plt.subplot(223); plot_digits(X_ba[:25], images_per_row=5)
 plt.subplot(224); plot_digits(X_bb[:25], images_per_row=5)
 plt.show()
+
+
+# It is important to note that we udes a simple SGDClassifier - a linear model that assigns a weight per class 
+# to each pixel - for new images the model sums the value of the weighted pixel intensities to get a score for 
+# each class - this can explain a model's confusion in similar digits that only differ by a few pixels
+# Models like this can benefit from preprocessing images, minimizing shifts/rotations, ensuring images 
+# are centered nd upright, to avoid similar digit confusion
+
+
+
+######## Multilabel Classification  Systems - Outputs mutlipe binary labels ###########
+# Pretend you're doing facial recognition and you want to label all the faces your model recognizes in one image
+# Before facial recognition, lets output two labels for each digit image
+y_train_large = (y_train >= 7)  # large digit greater than 7
+y_train_odd = (y_train % 2 == 1)  # odd digit
+y_multilabel = np.c_[y_train_large, y_train_odd]  #array containing two target labels for each image
+
+# KNeighborsClassifier() supports multilabel classification; not all classifiers do 
+# Train it using multiple targets array
+knn_clf = KNeighborsClassifier()
+knn_clf.fit(X_train, y_multilabel)
+
+knn_clf.predict([some_digit])  # True, True : because 9 is greater than 7, and 9 is odd
+
+# Evaluating multilabel classifiers
+# all other binary metrics discussed above may apply
+# measure individual F1 scores and avergae across all labels, assuming all labels are equally important
+
+y_train_knn_pred = cross_val_predict(knn_clf, X_train, y_train, cv=3)
+f1_score(y_train, y_train_knn_predict, average="macro")
+
+# To give a weight equal to the support of each digit's class; i.e. the number of instances with that target label
+f1_score(y_train, y_train_knn_predict, average="weighted")
+
+
+############## Multioutput Classification = Multioutput multiclass classification ################
+
+# Build a system removing noise from images : imput a noisy digit image, output a clean digit image
+# The classifiers output is multilabel(one label per pixel) and each label can have multiple values (pixel intensities rane from 0 to 255)
+# You can also have systems that output multiple labels per instance including both class labels and value labels
+# multioutput systems are not limited to classification tasks; perhaps predicting pixel intensity is better suited to regression
+
+# Take MNIST images, add noise to pixel intensities using Numpy's randint()
+# Target images will be the original images
+
+noise = np.random.randint(0, 100, (len(X_train), 784))
+X_train_mod = X_train + noise
+noise = np.random.randint(0 ,100, (len(X_test), 784))
+X_test_mod = X_test + noise
+y_train_mod = X_train
+y_test_mod = X_test
+
+# Not supposed to peak at test set, but good to check work in this scenario - ensure setup is correct
+X_test_mod[some_digit]
+knn_clf.fit(X_train_mod, y_train_mod)
+clean_digit = knn_clf.predict([X_test_mod[some_index]])
+plot_digit(clean_digit)
+

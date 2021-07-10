@@ -8,6 +8,7 @@ import os
 import tarfile
 from six.moves import urllib
 
+
 import numpy as np
 import pandas as pd
 
@@ -327,7 +328,12 @@ data_num_tr = num_pipeline.fit_transform(data_numerical_values_set)
 # repeat this for categorical variables 
 # page 67
 
+# Scikit-learn has changed 
+# For fix: https://github.com/ageron/handson-ml/blob/master/02_end_to_end_machine_learning_project.ipynb
+# https://github.com/ageron/handson-ml/issues/388
+
 # from sklearn.base import BaseEstimator, TransformerMixin
+'''
 class DataFrameSelector(BaseEstimator, TransformerMixin):
     def __init__(self, attribute_names):
         self.attribute_names = attribute_names
@@ -336,7 +342,7 @@ class DataFrameSelector(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         return X[self.attribute_names].values
 
-'''
+
 class catDataFrameSelector(BaseEstimator, TransformerMixin):
     def __init__(self, *args, **kwargs):
         self.encoder = LabelBinarizer(*args, **kwargs)
@@ -345,6 +351,7 @@ class catDataFrameSelector(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         return self.encoder.transform(X)
 '''
+
 
 # Look into ColumnTransformer class (Pull Request #3886) for easy attribute-specific transformations 
 # pip3 install sklearn-pandas to get DataFrameMapper class 9similar objective0
