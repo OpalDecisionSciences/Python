@@ -58,7 +58,7 @@ INPUT_DATA = CWD + '\\Special_Events_Permits.csv'
 # Import data set
 df = pd.read_csv(INPUT_DATA)
 
-# Rename columns
+# Rename columns : camelCase is to lowerCaseFirstWordCapitalizeAllOtherWords
 df = df.rename(columns={'Application Date':'applicationDate', 'Permit Status':'permitStatus', 'Permit Type':'permitType', 'Event Category':'eventCategory', 'Event Sub-Category':'eventSubCategory', 'Name of Event':'nameOfEvent', 'Year-Month-App#':'yearMonthApp', 'Event Start Date':'eventStartDate', 'Event End Date':'eventEndDate', 'Event Location - Park':'eventLocationPark', 'Event Location - Neighborhood':'eventLocationNeighborhood', 'Council District':'councilDistrict', 'Precinct':'precinct', 'Organization':'organization', 'Attendance':'attendance'})
 df.columns
 
@@ -147,7 +147,7 @@ np.log(df_train.attendance).plot(kind="hist", title="Histogram of Log Attendance
 # Start Fresh for Fun; use a different method for renaming/standardizing field names
 preprocessDF = pd.read_csv(INPUT_DATA)
 
-# Standardize Data : camel_case = column names to lower_case_with_underscores
+# Standardize Data : snake_case = column names to lower_case_with_underscores
 def StandardizeNames(cname):
     cname = re.sub(r'[-\.]', ' ', cname)
     cname = cname.strip().lower()
