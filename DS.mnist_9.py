@@ -8,41 +8,23 @@ warnings.simplefilter(action = 'ignore', category = UserWarning)
 warnings.simplefilter(action = 'ignore', category = DeprecationWarning)
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
 
-import os
-import tarfile
-from six.moves import urllib
-
 import numpy as np
 import pandas as pd
 
-from pandas.plotting import scatter_matrix
-
-import hashlib
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from sklearn.datasets import fetch_openml
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, GridSearchCV, StratifiedKFold, cross_val_score, cross_val_predict
-# from sklearn.model_selection import StratifiedShuffleSplit
-# from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import StratifiedKFold, cross_val_score, cross_val_predict
 
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer, StandardScaler, PolynomialFeatures, FunctionTransformer
-# from sklearn.preprocessing import OneHotEncoder
-# from sklearn.preprocessing import LabelBinarizer
-# from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import  StandardScaler
  
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator
 from sklearn.base import clone 
 
-from sklearn.pipeline import Pipeline, FeatureUnion
-# from sklearn.pipeline import FeatureUnion
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import roc_auc_score, confusion_matrix, precision_score, recall_score, f1_score, precision_recall_curve, roc_curve
 
-from sklearn.linear_model import LinearRegression, SGDClassifier
-from sklearn.metrics import mean_squared_error, roc_auc_score, confusion_matrix, precision_score, recall_score, f1_score, precision_recall_curve, roc_curve
-
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.ensemble import RandomForestClassifier 
 from sklearn.multiclass import OneVsOneClassifier
 
 from sklearn.neighbors import KNeighborsClassifier
