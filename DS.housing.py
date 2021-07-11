@@ -5,9 +5,7 @@ warnings.simplefilter(action = 'ignore', category = DeprecationWarning)
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
 
 import os
-import tarfile
 from six.moves import urllib
-
 
 import numpy as np
 import pandas as pd
@@ -19,22 +17,16 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, GridSearchCV
-# from sklearn.model_selection import StratifiedShuffleSplit
-# from sklearn.model_selection import GridSearchCV
 
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer, StandardScaler, PolynomialFeatures, FunctionTransformer
-# from sklearn.preprocessing import OneHotEncoder
-# from sklearn.preprocessing import LabelBinarizer
-# from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer, StandardScaler
 
 from sklearn.base import BaseEstimator, TransformerMixin
 
 from sklearn.pipeline import Pipeline, FeatureUnion
-# from sklearn.pipeline import FeatureUnion
 
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, roc_auc_score
+from sklearn.metrics import mean_squared_error
 
 from sklearn.feature_extraction import DictVectorizer
 
