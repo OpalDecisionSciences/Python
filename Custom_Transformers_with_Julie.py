@@ -19,6 +19,7 @@ warnings.simplefilter(action = 'ignore', category = DeprecationWarning)
 warnings.simplefilter(action = 'ignore', category = FutureWarning)
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 
@@ -33,7 +34,7 @@ from sklearn.datasets import fetch_openml
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, GridSearchCV, StratifiedKFold, cross_val_score, cross_val_predict
 
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer, StandardScaler, PolynomialFeatures, FunctionTransformer
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer, MultiLabelBinarizer, StandardScaler, PolynomialFeatures, FunctionTransformer
  
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.base import clone 
@@ -136,6 +137,7 @@ attendanceNullCnt = df_train.attendance.isnull().sum()
 print(attendanceNullCnt)  # Few Missing Values; 4 Null Values 
 attendanceStats = df_train.attendance.describe()
 print(attendanceStats)  # A lot of variation
+
 df_train.attendance.plot(kind="hist", title="Histogram of Attendance")  # Better on log scale
 np.log(df_train.attendance).plot(kind="hist", title="Histogram of Log Attendance")  # Much better
 
@@ -144,7 +146,7 @@ np.log(df_train.attendance).plot(kind="hist", title="Histogram of Log Attendance
 ############################### Pre-Processing ############################
 ###########################################################################
 
-# Start Fresh for Fun; use a different method for renaming/standardizing field names
+# A different method for renaming/standardizing field names
 preprocessDF = pd.read_csv(INPUT_DATA)
 
 # Standardize Data : snake_case = column names to lower_case_with_underscores
@@ -168,32 +170,371 @@ df =df.drop('filter_start_date', axis=1)
 ###############################################################################
 
 # Define the Outcome : Binary Classification, Complete or Not Complete
-y_train = np.where(df_train.permitStatus == "Complete", 1, 0)
+y_train = np.where(df_train.permit_status == "Complete", 1, 0)
+y_test = np.where(df_test.permit_status == "Complete", 1, 0)
 
 # Attendance is the only numeric field in the data set, set null values to 0
-X_train = df_train[["attendance"]].fillna(value=0)
+X_train_1 = df_train[["attendance"]].fillna(value=0)
+X_test_1 = df_test[["attendance"]].fillna(value=0)
 
-
-# Create model object
-model = LogisticRegression()
-
-# Fit model and predict on training data
+# Create model object, fit model, and predict on training data
 # Predict() produces a class (0 or 1), predict_proba produces probability of 0 and probability of 1
 # We are interested in the probability of the event happening so we take the second column
-model.fit(X_train, y_train)
-y_pred_train = model.predict(X_train)
-p_pred_train = model.predict_proba(X_train)[:, 1]
+model_1 = LogisticRegression(random_state=19)
+model_1.fit(X_train_1, y_train)
+y_pred_train = model_1.predict(X_train_1)
+p_pred_train = model_1.predict_proba(X_train_1)[:, 1]
 
-# Predict on the test data; evaluate model performance 
+# Predict on the test data and measure model performance on test set 
 # Create a baseline model for comparison purposes, really simplistic, out-of-the-box
 # Predict the mean for everything and use this, no parameters or anything fancy
-p_baseline = [y_train.mean()]*len(y_test)
-p_pred_test = model.predict_proba(X_test)[:, 1]
+p_baseline_test = [y_train.mean()]*len(y_test)
+auc_baseline = roc_auc_score(y_test, p_baseline_test)
+print(auc_baseline)
+y_pred_test_1 = model_1.predict(X_test_1)
+p_pred_test_1 = model_1.predict_proba(X_test_1)[:, 1]
+auc_test_1 = roc_auc_score(y_test, p_pred_test_1)
+print(auc_test_1)
 
-# Measure performance on test set 
-auc_base = roc_auc_score(y_test, p_baseline)
-auc_test = roc_auc_score(y_test, p_pred_test)
 
+
+####################################################################################
+################################ Model with Pipeline ###############################
+####################################################################################
+
+# Group columns according to preprocessing needed
+
+OUTCOME = 'permit_status'
+NEAR_UNIQUE_FEATURES = ['name_of_event', 'year_month_app', 'organization']
+CATEGORICAL_FEATURES = ['permit_type', 'event_catogory', 'event_sub_category', 'event_location_park', 'event_location_neighborhood']
+MULTIPLE_FEATURES = ['council_district', 'precinct']
+DATE_FEATURES = ['application_date', 'event_start_date', 'event_end_date']
+NUM_FEATURES = ['attendance']
+
+# Preprocessing with a Pipeline
+
+class DFFeatureUnion(TransformerMixin):
+    # FeatureUnion but for pandas DataFrames
+
+    def __init__(self, transformer_list):
+        self.transformer_list = transformer_list
+
+    def fit(self, X, y=None):
+        for (name, t) in self.transformer_list:
+            t.fit(X, y)
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xts = [t.transform(X) for _, t in self.transformer_list]
+        Xunion = reduce(lambda X1, X2: pd.merge(X1, X2, left_index=True, right_index=True), Xts)
+        return Xunion
+
+
+class ColumnExtractor(TransformerMixin):
+
+    def __init__(self, cols):
+        self.cols = cols
+
+    def fit(self, X, y=None):
+        # Stateless transformer
+        return self
+
+    def transform(self, X):
+        # Assumes X is a DataFrame
+        Xcols = X[self.cols]
+        return Xcols
+
+
+class ZeroFillTransformer(TransformerMixin):
+
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xz = X.fillna(value=0)
+        return Xz
+
+
+class Log1pTransformer(TransformerMixin):
+    
+    def fit(self, X, y=None):
+        #stateless tranformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xlog = np.log1p(X)
+        return Xlog
+
+
+class DummyTransformer(TransformerMixin):
+    def __init__(self):
+        self.dv = None
+
+    def fit(self, X, y=None):
+        #assumes all columns of X are strings
+        Xdict = X.to_dict('records')
+        self.dv = DictVectorizer(sparse=False)
+        self.dv.fit(Xdict)
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xdict = X.to_dict('records')
+        Xt = self.dv.transform(Xdict)
+        cols = self.dv.get_feature_names()
+        Xdum = pd.DataFrame(Xt, index=X.index, columns=cols)
+        # drop column indicating NaNs
+        nan_cols = [c for c in cols if '=' not in c]
+        Xdum = Xdum.drop(nan_cols, axis=1)
+        return Xdum
+
+class DFStandardScaler(TransformerMixin):
+    # StandardScaler but for pandas DataFrames
+
+    def __init__(self):
+        self.ss = None
+        self.mean_ = None
+        self.scale_ = None
+
+    def fit(self, X, y=None):
+        self.ss = StandardScaler()
+        self.ss.fit(X)
+        self.mean_ = pd.Series(self.ss.mean_, index=X.columns)
+        self.scale_ = pd.Series(self.ss.scale_, index=X.columns)
+        return self
+
+    def transform(self, X):
+        #assumes X is a DataFrame
+        Xss = self.ss.transform(X)
+        Xscaled = pd.DataFrame(Xss, index=X.index, columns=X.columns)
+        return Xscaled
+
+pipeline = Pipeline([
+    ('features', DFFeatureUnion([
+        ('categoricals', Pipeline([
+            ('extract', ColumnExtractor(CATEGORICAL_FEATURES)),
+            ('dummy', DummyTransformer())
+        ])),
+        ('numerics', Pipeline([
+            ('extract', ColumnExtractor(NUM_FEATURES)),
+            ('zero_fill', ZeroFillTransformer()),
+            ('log', Log1pTransformer())
+        ]))
+    ])),
+    ('scale', DFStandardScaler())
+])
+
+pipeline.fit(df_train)
+X_train_2 = pipeline.transform(df_train)
+X_test_2 = pipeline.transform(df_test)
+
+# Fit Model
+model_2 = LogisticRegression(random_state=19)
+model_2.fit(X_train_2, y_train)
+y_pred_train_2 = model_2.predict(X_train_2)
+p_pred_train_2 = model_2.predict_proba(X_train_2)[:, 1]
+
+# Evaluate Model
+p_pred_test_2 = model_2.predict_Proba(X_test_2)[:, 1]
+auc_test_2 = roc_auc_score(y_test, p_pred_test_2)
+print(auc_test_2)
+
+
+# Custom Transformers for DF Pipeline
+class DatFormatter(TransformerMixin):
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xdate = X.apply(pd.to_datetime)
+        return Xdate 
+
+
+class DateDiffer(TransformerMixin):
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        beg_cols = X.colums[:-1]
+        end_cols = X.columns[1:]
+        Xbeg = X[beg_cols].as_matrix()
+        Xend = X[end_cols].as_matrix()
+        Xd = (Xend - Xbeg) / np.timedelta64(1, 'D')
+        diff_cols = ['—>'.join(pair) for pair in zip(beg_cols, end_cols)]
+        Xdiff = pd.DataFrame(Xd, index=X.index, columns=diff_cols)
+        return Xdiff 
+
+
+class DFImputer(TransformerMixin):
+    # Imputer but for pandas DataFrames
+
+    def __init__(self, strategy='mean'):
+        self.strategy = strategy
+        self.imp = None
+        self.statistics_ = None
+
+    def fit(self, X, y=None):
+        self.imp = SimpleImputer(strategy=self.strategy)
+        self.imp.fit(X)
+        self.statistics_ = pd.Series(self.imp.statistics_, index=X.columns)
+        return self
+
+    def transform(self, X):
+        #assumes X is a DataFrame
+        Ximp = self.imp.transform(X)
+        Xfilled = pd.DataFrame(Ximp, index=X.index, columns=X.columns)
+        return Xfilled
+
+class MultiEncoder(TransformerMixin):
+    # Multiple-column MultiLabelBinarizer for pandas DataFrames
+
+    def __init__(self, sep=', '):
+        self.sep = sep
+        self.mlbs = None
+
+    def _col_transform(self, x, mlb):
+        cols = [''.join([x.name, '=', c]) for c in mlb.classes_]
+        xmlb = mlb.transform(x)  
+        xdf = pd.DataFrame(xmlb, index=x.index, columns=cols)
+        return xdf
+
+    def fit(self, X, y=None):
+        Xsplit = X.applymap(lambda x: x.split(self.sep))
+        self.mlbs = [MultiLabelBinarizer().fit(Xsplit[c]) for c in X.columns]
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xsplit = X.applymap(lambda x: x.split(self.sep))
+        Xmlbs = [self._col_transform(Xsplit[c], self.mlbs[i]) 
+        for i, c in enumerate(X.columns)]
+        Xunion = reduce(lambda X1, X2: pd.merge(X1, X2, left_index=True, right_index=True), Xmlbs)
+        return Xunion
+
+
+# Model with More Features
+pipeline3 = Pipeline([
+    ('features', DFFeatureUnion([
+        ('dates', Pipeline([
+            ('extract', ColumnExtractor(DATE_FEATURES)),
+            ('to_date', DateFormatter()),
+            ('diffs', DateDiffer()),
+            ('mid_fill', DFImputer(strategy="median"))
+        ])),
+        ('categoricals', Pipeline([
+            ('extract', ColumnExtractor(CATEGORICAL_FEATURES)),
+            ('dummy', DummyTransformer())
+        ])),
+        ('multi_labels', Pipeline([
+            ('extract', ColumnExtractor(MULTIPLE_FEATURES)),
+            ('multi-dummy', MultiEncoder(sep=';')),
+        ])),
+        ('numerics', Pipeline([
+            ('extract', ColimnsExtractor(NUM_FEATURES)),
+            ('zero_fill', ZeroFillTransformer()),
+            ('log', Log1pTransformer())
+        ]))
+    ])),
+    ('scale', DFStandardScaler())
+])
+
+
+#############################################################################
+########################### Collection of Transformers ######################
+#############################################################################
+
+class DFFunctionTransformer(TransformerMixin):
+    # FunctionTransformer but for pandas DataFrames
+
+    def __init__(self, *args, **Kwargs):
+        self.ft = FunctionTransformer(*args, **Kwargs)
+
+    def fit(self, X, y=None):
+    #stateless transformer
+        
+        return self
+
+    def transform(self, X):
+        Xt = self.ft.transform(X)
+        Xt = pd.DataFrame(Xt, index=X.index, columns=X.columns)
+        return Xt
+
+
+class DFRobustScaler(TransformerMixin):
+    # RobustScaler but for pandas DataFrame
+
+    def __init__(self):
+        self.rs = None
+        self.center_ = None
+        self.scale_ = None
+
+    def fit(self, X, y=None):
+        self.rs - RobustScaler()
+        self.rs.fit(X)
+        self.center_ = pd.Series(self.rs.center_, index=X.columns)
+        self.scale_ = pd.Series(self.rs.scale_, index=X.columns)
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xrs = self.rs.transform(X)
+        Xscaled = pd.DataFrame(Xrs, index=X.index, columns=X.columns)
+        return Xscaled
+
+
+
+class StringTransformer(TransformerMixin):
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DatFrame
+        Xstr = X.applymap(str)
+        return Xstr
+
+
+class ClipTransformer(TransformerMixin):
+    def __init__(self, a_min, a_max):
+        self.a_min = a_min
+        self.a_max = a_max
+
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+    def transform(self, X):
+        # assumes X is a DataFrame
+        Xclip = np.clip(X, self.a_min, self.a_max)
+        return Xclip
+
+
+class AddConstantTransformer(TransformerMxin):
+    def __init__(self, c=1):
+        self.c = c
+
+    def fit(self, X, y=None):
+        # stateless transformer
+        return self
+
+def transform(self, X):
+# assumes X is a DataFrame
+Xc = X + self.c
+return Xc
+
+
+########################################################################################
+########################## Read Me Notes From YouTube Video ############################
+########################################################################################
+
+'''
 Transformers are for data preparation
 Estimators have the predict method and are for modeling
 
@@ -454,260 +795,4 @@ df['eventDuration'] = endDate - startDate
 
 
 
-########################### Collection of Transformers ######################
-# From Github repo
-
-Class DFFunctionTransformer(TransformerMixin):
-# FunctionTransformer but for pandas DataFrames
-def __init__(self, *args, **Kwargs):
-self.ft = FunctionTransformer(*args, **Kwargs)
-
-def fit(self, X, y=None):
-#stateless transformer
-return self
-
-def transform(self, X):
-Xt = self.ft.transform(X)
-Xt = pd.DataFrame(Xt, index=X.index, columns=X.columns)
-return Xt
-
-
-Class DFFeatureUnion(TransformerMixin):
-# FeatureUnion but for pandas DataFrames
-
-def __init__(self, transformer_list):
-self.transformer_list = transformer_list
-
-def fit(self, X, y=None):
-for (name, t) in self.transformer_list:
-t.fit(X, y)
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xts = [t.transform(X) for _, t in self.transformer_list]
-Xunion = reduce(lambda X1, X2: pd,merge(X1, X2, left_index=True, right_index=True), Xts)
-return Xunion
-
-
-Class DFImputer(TransformerMixin):
-# Imputer but for pandas DataFrames
-
-def __init__(self, strategy=‘mean’):
-self.strategy = strategy
-self.imp = None
-self.statistics_ = None
-
-def fit(self, X, y=None):
-self.imp = Imputer(strategy=self.strategy)
-self.imp.fit(X)
-self.statistics_ = pd.Series(self.imp.statistics_, index=X.columns)
-return self
-
-def transform(self, X):
-#assumes X is a DataFrame
-Ximp = self.imp.transform(X)
-Xfilled = pd.DataFrame(Ximp, index=X.index, columns=X.columns)
-return Xfilled
-
-
-classDFStandardScaler(TransformerMixin):
-# StandardScaler but for pandas DataFrames
-
-def __init__(self):
-self.ss = None
-self.mean_ = None
-self.scale_ = None
-
-def fit(self, X, y=None):
-self.ss = StandardScaler()
-self.ss.fit(X)
-self.mean_ = pd.Series(self.ss.mean_, index=X.columns)
-self.scale_ = pd.Series(self.ss.scale_, index=X.columns)
-return self
-
-def transform(self, X):
-#assumes X is a DataFrame
-Xss = self.ss.transform(X)
-Xscaled = pd.DataFrame(Xss, index=X.index, columns=X.columns)
-return Xscaled
-
-
-Class DFRobustScaler(TransformerMixin):
-# RobustScaler but for pandas DataFrame
-
-def __init__(self):
-self.rs = None
-self.center_ = None
-self.scale_ = None
-
-def fit(self, X, y=None):
-self.rs - RobustScaler()
-self.rs.fit(X)
-self.center_ = pd.Series(self.rs.center_, index=X.columns)
-self.scale_ = pd.Series(self.rs.scale_, index=X.columns)
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xrs = self.rs.transform(X)
-Xscaled = pd.DataFrame(Xrs, index=X.index, columns=X.columns)
-return Xscaled
-
-
-Class ColumnExtractor(TransformerMixin):
-
-def __init__(self, cols):
-self.cols = cols
-
-def fit(self, X, y=None):
-# Stateless transformer
-return self
-
-def transform(self, X):
-# Assumes X is a DataFrame
-Xcols = X[self.cols]
-return Xcols
-
-
-class ZeroFillTransformer(TransformerMixin):
-
-def fit(self, X, y=None):
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xz = X.fillna(value=0)
-return Xz
-
-
-class Log1PTransformer(TransformerMixin):
-def fit(self, X, y=None):
-#stateless tranformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xlog = np.log1p(X)
-return Xlog
-
-
-class DatFormatter(TransformerMixin):
-def fit(self, X, y=None):
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xdate = X.apply(pd.to_datetime)
-return Xdate 
-
-
-class DateDiffer(TransformerMixin):
-def fit(self, X, y=None):
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-beg_cols = X.colums[:-1]
-end_cols = X.columns[1:]
-Xbeg = X[beg_cols].as_matrix()
-Xend = X[end_cols].as_matrix()
-Xd = (Xend - Xbeg) / np.timedelta64(1, ‘D’)
-diff_cols = [‘—>’.join(pair) for pair in zip(beg_cols, end_cols)]
-Xdiff = pd.DataFrame(Xd, index=X.index, columns=diff_cols)
-return Xdiff 
-
-
-class DummyTransformer(TransformerMixin):
-def __init__(self:
-self.dv = None
-
-def fit(self, X, y=None):
-#assumes all columns of X are strings
-Xdict = X.to_dict(‘records’)
-self.dv = DictVectorizer(sparse=False)
-self.dv.fit(Xdict)
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xdict = X.to_dict(‘records’)
-Xt = self.dv.transform(Xdict)
-cols = self.dv.get_feature_names()
-Xdum = pd.DataFrame(Xt, index=X.index, columns=cols)
-# drop column indicating NaNs
-nan_cols = [c for c in cols if ‘=‘ not in c]
-Xdum = Xdum.drop(nan_cols, axis=1)
-return Xdum
-
-class MultiEncoder(TransformerMixin):
-# Multiple-column MultiLabelBinarizer for pandas DataFrames
-
-def __init__(self, sep=‘, ‘):
-self.sep = sep
-self.mlbs = None
-
-def _col_transform(self, x, mlb):
-cols = [‘’.join([x.name, ‘=‘, c]) for c in mlb.classes_]
-xmlb = mlb.transform(x)  
-xdf = pd.DataFrame(xmlb, index=x.index, columns=cols)
-return xdf
-
-def fit(self, X, y=None):
-Xsplit = X.applymap(lambda x: x.split(self.sep))
-self.mlbs = [MultiLabelBinarizer().fit(Xsplit[c]) for c in X.columns]
-return self
-
-def transfomr(self, X):
-# assumes X is a DataFrame
-Xsplit = X.applymap(lambda x: x.split(self.sep))
-Xmlbs = [self._col_transform(Xsplit[c], self.mlbs[i]) 
-for i, c in enumerate(X.columns)]
-Xunion = reduce(lambda X1, X2, left_index=True, right_index=True), Xmlbs)
-return Xunion
-
-
-class StringTransformer(TransformerMixin):
-def fit(self, X, y=None):
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DatFrame
-Xstr = X.applymap(str)
-return Xstr
-
-
-class ClipTransformer(TransformerMixin):
-def __init__(self, a_min, a_max):
-self.a_min = a_min
-self.a_max = a_max
-
-def fit(self, X, y=None):
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xclip = np.clip(X, self.a_min, self.a_max)
- 
-return Xclip
-
-
-class AddConstantTransformer(TransformerMxin):
-def __init__(self, c=1):
-self.c = c
-
-def fit(self, X, y=None):
- 
-# stateless transformer
-return self
-
-def transform(self, X):
-# assumes X is a DataFrame
-Xc = X + self.c
-return Xc
-
-
+'''
