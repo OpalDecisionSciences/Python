@@ -31,7 +31,7 @@ from sklearn.pipeline import Pipeline
 
 # Computes the inverse of X^T * X, an n* n matrix, with computational complexity of O(n^2.4) to O(n^3)
 
-Theta_hat = (X^T * X)^-1 * X^T * y
+# Theta_hat = (X^T * X)^-1 * X^T * y
 
 # Generate linear-looking data
 X = 2 * np.random.rand(100, 1)
@@ -48,8 +48,11 @@ y_predict = X_new_b.dot(theta_best)
 y_predict  # 3.4, 10.17
 
 # Plot this model's predictions
-plt.plot(X_new, y_predict, "r-")
+plt.plot(X_new, y_predict, "r-", linewidth=2, label="Predictions")
 plt.plot(X, y, "b.")
+plt.xlabel("x", fontsize=18)
+plt.ylabel("y", rotation=0, fontsize=18)
+plt.legend(loc="upper left", fontsize=14)
 plt.axis([0, 2, 0, 15])
 plt.show()
 
@@ -71,19 +74,45 @@ lin_reg.predict(X_new)  # Same results: 3.4, 10.17
 # Training a model means finding a combination of parameters that minimizes a cost function
 # Ensuring features have a similar scale allows this process to reach global minimums more quickly
 
-# Gradient vecot of the cost function - Batch Gradient Descent is very slow on large training sets but faster than the Normal Equation on a LInear model with hundreds of thousands of features
+# Gradient vector of the cost function - Batch Gradient Descent is very slow on large training sets but faster than the Normal Equation on a LInear model with hundreds of thousands of features
 2/m * X^T * (X * theta - y)  # Calculations over the full training set, X, at each gradient step
 
 # Batch Gradient Descent - Gradient Decsent Step = theta_next_step = theta - gradient_vector_MSE
+theta_path_bgd = []
+
+def plot_gradient_descent(theta, eta, theta_path=None):
+    m = len(X_b)
+    plt.plot(X, y, "b.")
+    n_iterations = 1000
+    for iteration in range(n_iterations):
+        if iteration < 10:
+            y_predict = X_new_b.dot(theta)
+            style = "b-" if iteration > 0 else "r--"
+            plt.plot(X_new, y_predict, style)
+        gradients = 2/m * X_b.T.dot(X_b.dot(theta) - y)
+        theta = theta - eta * gradients
+        if theta_path is not None:
+            theta_path.append(theta)
+    plt.xlabel("x", fontsize=18)
+    plt.axis([0, 2, 0, 15])
+    plt.title("eta = {}".format(eta), fontsize=16)
+
 eta = 0.1  # learning rate
 n_iterations = 1000
 m = 100
 
+np.random.seed(42)
 theta = np.random.randn(2, 1)  # random initialization
 
-for iteration in range(n_iterations):
-    gradients = 2/m * X_b.T.dot(X_b.dot(theta) - y)
-    theta = theta - eta * gradients
+plt.figure(figsize=(10,4))
+plt.subplot(131)
+plot_gradient_descent(theta, eta=0.2)
+plt.ylabel("y", rotation=0, fontsize=18)
+plt.subplot(132)
+plot_gradient_descent(theta, eta=0.1, theta_path=theta_path_bgd)
+plt.subplot(133)
+plot_gradient_descent(theta, eta=0.5)
+plt.show()
 
 theta  # Same results: 3.4, 3.38 - grid search can help find a good learning rate (use a limited number of iterations to elimate models that take too long to converge)
 
@@ -93,24 +122,86 @@ t0, t1 = 5, 50  # learning schedule hyperparameters
 def learning_schedule(t):
     return t0 / (t + t1)
 
+theta_path_sgd = []
+m = len(X_b)
 theta = np.random.randn(2, 1)  # random initialization
 
 for epoch in range(n_epochs):
     for i in range(m):
+        if epoch == 0 and i < 20:
+            y_predict = X_new_b.dot(theta)
+            style = "b-" if i > 0 else "r--"
+            plt.plot(X_new, y_predict, style)
         random_index = np.random.randint(m)
         xi = X_b[random_index:random_index+1]
         yi = y[random_index:random_index+1]
         gradients = 2 * xi.T.dot(xi.dot(theta) - yi)
         eta = learning_schedule(epoch * m + i)
         theta = theta - eta * gradients
+        theta_path_sgd.append(theta)
+
+plt.plot(X, y, "b.")
+plt.xlabel("x", fontsize=18)
+plt.ylabel("y", rotation=0, fontsize=18)
+plt.axis([0, 2, 0, 15])
+plt.show()
 
 theta  # Similar result: 3.44, 3.40 - a fairly good solution comparing 50 epochs to 1000 iterations from batch above
 
 # Same thing using Scikit-Learn SGDRegressor - default optimizes the squared error cost function
-sgd_reg = SGDRegressor(max_iter=50, penalty=None, eta0=0.1)
+sgd_reg = SGDRegressor(max_iter=50, tol=-np.infty, penalty=None, eta0=0.1, random_state=42)
 sgd_reg.fit(X, y.ravel())
-
 sgd_reg.intercept_, sgd_reg.coef_  # Similar result: 3.44, 3.44
+
+'''
+SGDRegressor(alpha=0.0001, average=False, early_stopping=False, epsilon=0.1,
+            eta=0.1, fit_intercept=True,l1_ratio=0.15,
+            learning_rate='invscaling', loss='squared_loss', max_iter=50,
+            n_iter=None, n_iter_no_change=5, penalty=None, power_t=0.25,
+            random_state=42, shuffle=True, tol=-np.infty, validation_fraction=0.1,
+            verbose=0, warm_start=False)
+'''
+
+# Mini-Batch Gradient Descent
+theta_path_mgd = []
+n_iterations = 50
+minibatch_size = 20
+np.random.seed(42)
+theta = np.random.randn(2, 1)  # random initialization
+t0, t1 = 200, 1000
+
+def learning_schedule(t):
+    return t0 / (t + t1)
+
+t = 0
+for epoch in range(n_iterations):
+    shuffled_indices = np.random.permutation(m)
+    X_b_shuffled = X_b[shuffled_indices]
+    y_shuffled = y[shuffled_indices]
+    for i in range(0, m, minibatch_size):
+        t += 1
+        xi = X_b_shuffled[i:i+minibatch_size]
+        yi = y_shuffled[i:i+minibatch_size]
+        gradients = 2/minibatch_size * xi.T.dot(xi.dot(theta) - yi)
+        eta = learning_schedule(t)
+        theta = theta - eta * gradients
+        theta_path_mgd.append(theta)
+
+theta
+
+theta_path_bgd = np.array(theta_path_bgd)
+theta_path_sgd = np.array(theta_path_sgd)
+theta_path_mgd = np.array(theta_path_mgd)
+
+plt.figure(figsize=(7,4))
+plt.plot(theta_path_sgd[:, 0], theta_path_sgd[:, 1], "r-s", linewidth=1, label="Stochastic")
+plt.plot(theta_path_mgd[:, 0], theta_path_mgd[:, 1], "g-+", linewidth=2, label="Mini-Batch")
+plt.plot(theta_path_bgd[:, 0], theta_path_bgd[:, 1], "b-o", linewidth=3, label="Batch")
+plt.legend(loc="upper left", fontsize=16)
+plt.xlabel("theta_0", fontsize=20)
+plt.ylabel("theta", fontsize=20, rotation=0)
+plt.axis([2.5, 4.5, 2.3, 3.9])
+plt.show()
 
 # Polynomial Regression - PolynomialFeatures(degree=d) transforms array of n features to an array of ((n+d)! / (d!n!) features
 m = 100
