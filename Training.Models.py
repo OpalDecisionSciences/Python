@@ -13,16 +13,24 @@ warnings.simplefilter(action = 'ignore', category = FutureWarning)
 
 import os
 import numpy as np
+import numpy.random as rnd
 import pandas as pd
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+mpl.rc('axes', labelsize=14)
+mpl.rc('xtick', labelsize=12)
+mpl.rc('ytick', labelsize=12)
 
 from sklearn.base import clone
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split 
 from sklearn.linear_model import LinearRegression, SGDRegressor, Ridge, Lasso, ElasticNet
 from sklearn.pipeline import Pipeline
+
+# To make this file stable across all runs
+np.random.seed(42)
 
 
 ####################################################################################
@@ -50,8 +58,8 @@ y_predict  # 3.4, 10.17
 # Plot this model's predictions
 plt.plot(X_new, y_predict, "r-", linewidth=2, label="Predictions")
 plt.plot(X, y, "b.")
-plt.xlabel("x", fontsize=18)
-plt.ylabel("y", rotation=0, fontsize=18)
+plt.xlabel("$x_1$", fontsize=18)
+plt.ylabel("$y$", rotation=0, fontsize=18)
 plt.legend(loc="upper left", fontsize=14)
 plt.axis([0, 2, 0, 15])
 plt.show()
@@ -78,6 +86,7 @@ lin_reg.predict(X_new)  # Same results: 3.4, 10.17
 2/m * X^T * (X * theta - y)  # Calculations over the full training set, X, at each gradient step
 
 # Batch Gradient Descent - Gradient Decsent Step = theta_next_step = theta - gradient_vector_MSE
+
 theta_path_bgd = []
 
 def plot_gradient_descent(theta, eta, theta_path=None):
@@ -93,7 +102,7 @@ def plot_gradient_descent(theta, eta, theta_path=None):
         theta = theta - eta * gradients
         if theta_path is not None:
             theta_path.append(theta)
-    plt.xlabel("x", fontsize=18)
+    plt.xlabel("$x_1$", fontsize=18)
     plt.axis([0, 2, 0, 15])
     plt.title("eta = {}".format(eta), fontsize=16)
 
@@ -107,7 +116,7 @@ theta = np.random.randn(2, 1)  # random initialization
 plt.figure(figsize=(10,4))
 plt.subplot(131)
 plot_gradient_descent(theta, eta=0.2)
-plt.ylabel("y", rotation=0, fontsize=18)
+plt.ylabel("$y$", rotation=0, fontsize=18)
 plt.subplot(132)
 plot_gradient_descent(theta, eta=0.1, theta_path=theta_path_bgd)
 plt.subplot(133)
@@ -116,14 +125,19 @@ plt.show()
 
 theta  # Same results: 3.4, 3.38 - grid search can help find a good learning rate (use a limited number of iterations to elimate models that take too long to converge)
 
+
 # Stochastic Gradient Descent - based on one random instance oposed to the whole training set
-n_epochs = 50
-t0, t1 = 5, 50  # learning schedule hyperparameters
-def learning_schedule(t):
-    return t0 / (t + t1)
 
 theta_path_sgd = []
 m = len(X_b)
+np.random.seed(42)
+
+n_epochs = 50
+t0, t1 = 5, 50  # learning schedule hyperparameters
+
+def learning_schedule(t):
+    return t0 / (t + t1)
+
 theta = np.random.randn(2, 1)  # random initialization
 
 for epoch in range(n_epochs):
@@ -141,8 +155,8 @@ for epoch in range(n_epochs):
         theta_path_sgd.append(theta)
 
 plt.plot(X, y, "b.")
-plt.xlabel("x", fontsize=18)
-plt.ylabel("y", rotation=0, fontsize=18)
+plt.xlabel("$x_1$", fontsize=18)
+plt.ylabel("$y$", rotation=0, fontsize=18)
 plt.axis([0, 2, 0, 15])
 plt.show()
 
@@ -151,8 +165,6 @@ theta  # Similar result: 3.44, 3.40 - a fairly good solution comparing 50 epochs
 # Same thing using Scikit-Learn SGDRegressor - default optimizes the squared error cost function
 sgd_reg = SGDRegressor(max_iter=50, tol=-np.infty, penalty=None, eta0=0.1, random_state=42)
 sgd_reg.fit(X, y.ravel())
-sgd_reg.intercept_, sgd_reg.coef_  # Similar result: 3.44, 3.44
-
 '''
 SGDRegressor(alpha=0.0001, average=False, early_stopping=False, epsilon=0.1,
             eta=0.1, fit_intercept=True,l1_ratio=0.15,
@@ -161,15 +173,18 @@ SGDRegressor(alpha=0.0001, average=False, early_stopping=False, epsilon=0.1,
             random_state=42, shuffle=True, tol=-np.infty, validation_fraction=0.1,
             verbose=0, warm_start=False)
 '''
+sgd_reg.intercept_, sgd_reg.coef_  # Similar result: 3.44, 3.44
 
 # Mini-Batch Gradient Descent
 theta_path_mgd = []
+
 n_iterations = 50
 minibatch_size = 20
+
 np.random.seed(42)
 theta = np.random.randn(2, 1)  # random initialization
-t0, t1 = 200, 1000
 
+t0, t1 = 200, 1000
 def learning_schedule(t):
     return t0 / (t + t1)
 
@@ -198,15 +213,24 @@ plt.plot(theta_path_sgd[:, 0], theta_path_sgd[:, 1], "r-s", linewidth=1, label="
 plt.plot(theta_path_mgd[:, 0], theta_path_mgd[:, 1], "g-+", linewidth=2, label="Mini-Batch")
 plt.plot(theta_path_bgd[:, 0], theta_path_bgd[:, 1], "b-o", linewidth=3, label="Batch")
 plt.legend(loc="upper left", fontsize=16)
-plt.xlabel("theta_0", fontsize=20)
-plt.ylabel("theta", fontsize=20, rotation=0)
+plt.xlabel(r"$\theta_0$", fontsize=20)
+plt.ylabel(r"$\theta_1$   ", fontsize=20, rotation=0)
 plt.axis([2.5, 4.5, 2.3, 3.9])
 plt.show()
 
 # Polynomial Regression - PolynomialFeatures(degree=d) transforms array of n features to an array of ((n+d)! / (d!n!) features
+np.random.seed(42)
+
 m = 100
 X = 6 * np.random.rand(m, 1) - 3
 y = 0.5 * X**2 + X + 2 + np.random.randn(m, 1)
+
+plt.plot(X, y, "b.")
+plt.xlabel("$x_1$", fontsize=18)
+plt.ylabel("$y$", rotation=0, fontsize=18)
+plt.axis=([-3, 3, 0, 10])
+plt.show()
+
 
 poly_features = PolynomialFeatures(degree=2, include_bias=False)
 X_poly = poly_features.fit_transform(X)
@@ -217,6 +241,40 @@ X_poly[0]  # 0.3274, 0.1072
 lin_reg = LinearRegression()
 lin_reg.fit(X_poly, y)
 lin_reg.intercept_, lin_reg.coef_  # The model estimates y_hat = 0.494x**2 + 1.03x + 1.99 for x-sub-1, which is very close to the original function
+
+X_new = np.linspace(-3, 3, 100).reshape(100, 1)
+X_new_poly = poly_features.transform(X_new)
+y_new = lin_reg.predict(X_new_poly)
+plt.plot(X, y, "b.")
+plt.plot(X_new, y_new, "r-", linewidth=2, label="Predictions")
+plt.xlabel("$x_1$", fontsize=18)
+plt.ylabel("y", rotation=0, fontsize=18)
+plt.legend(loc="upper left", fontsize=14)
+plt.axis=([-3, 3, 0, 10])
+plt.show()
+
+
+for style, width, degree in (("g-", 1, 300), ("b--", 2, 2), ("r-+", 2, 1)):
+    polybig_features = PolynomialFeatures(degree=degree, include_bias=False)
+    std_scaler = StandardScaler()
+    lin_reg = LinearRegression()
+    polynomial_regression = Pipeline([
+        ("poly_features", polybig_features),
+        ("std_scaler", std_scaler),
+        ("lin_reg", lin_reg),
+    ])
+    polynomial_regression.fit(X, y)
+    y_newbig = polynomial_regression.predict(X_new)
+
+plt.plot(X_new, y_newbig, style, label=str(degree), linewidth=width)
+
+plt.plot(X, y, "b.", linewidth=3)
+plt.legend(loc="upper left")
+plt.xlabel("$x_1$", fontsize=18)
+plt.ylabel("$y$", rotation=0, fontsize=18)
+plt.axis=([-3, 3, 0, 10])
+plt.show()
+
 
 # Plotting learning curves
 def plot_learning_curves(model, X, y):
