@@ -382,7 +382,7 @@ y = 2 + X + 0.5 * X**2 + np.random.randn(m, 1)
 
 X_train, X_val, y_train, y_val = train_test_split(X[:50], y[:50].ravel(), test_size=0.5, random_state=10)
 
-# Early Stopping - A different way to regularize iterative learning algorithms : stop as soon as the validation erro reaches a minimum
+# Early Stopping - A different way to regularize iterative learning algorithms : stop as soon as the validation error reaches a minimum
 poly_scaler = Pipeline([
     ("poly_features", PolynomialFeatures(degree=90, include_bias=False)),
     ("stad_scaler", StandardScaler())
@@ -391,7 +391,7 @@ poly_scaler = Pipeline([
 X_train_poly_scaled = poly_scaler.fit_transform(X_train)
 X_val_poly_scaled = poly_scaler.transform(X_val)
 
-sgd_reg = SGDRegressor(max_iter=1, tol=-np.infty, warm_start=True, penalty=None, learning_rate="constant", eta=0.0005, random_state=42)  # Warm start continues training where it left off instead of starting from scratch
+sgd_reg = SGDRegressor(max_iter=1, tol=-np.infty, warm_start=True, penalty=None, learning_rate="constant", eta0=0.0005, random_state=42)  # Warm start continues training where it left off instead of starting from scratch
 
 minimum_val_error = float("inf")
 best_epoch = None
@@ -437,4 +437,97 @@ plt.legend(loc="upper right", fontsize=14)
 plt.xlabel("Epoch", fontsize=14)
 plt.ylabel("RMSE", fontsize=14)
 plt.show()
+
+
+t1a, t1b, t2a, t2b = -1, 3, -1.5, 1.5
+
+t1s = np.linspace(t1a, t1b, 500)
+t2s = np.linspace(t2a,t2b, 500)
+
+t1, t2 = np.meshgrid(t1s, t2s)
+T = np.c_[t1.ravel(), t2.ravel()]
+Xr = np.array([[1, 1], [1, -1], [1, 0.5]])
+yr = 2 * Xr [:, :1] + 0.5 * Xr[:, 1:]
+
+J = (1/len(Xr) * np.sum((T.dot(Xr.T) - yr.T)**2, axis=1)).reshape(t1.shape)
+
+N1 = np.linalg.norm(T, ord=1, axis=1).reshape(t1.shape)
+N2 = np.linalg.norm(T, ord=2, axis=1).reshape(t1.shape)
+
+t_min_idx = np.unravel_index(np.argmin(J), J.shape)
+t1_min, t2_min = t1[t_min_idx], t2[t_min_idx]
+
+t_init = np.array([[0.25], [-1]])
+
+
+def bgd_path(theta, X, y, l1, l2, core=1, eta=0.05, n_iterations=200):
+    path = [theta]
+    for iteration in range(n_iterations):
+        gradients = core * 2/len(X) * X.T.dot(X.dot(theta) - y) + l1 * np.sign(theta) + l2 * theta
+        theta = theta - eta * gradients
+        path.append(theta)
+    return np.array(path)
+
+fig, axes = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(10.1, 8))
+for i, N, l1, l2, title in ((0, N1, 2., 0, "Lasso"), (1, N2, 0, 2., "Ridge")):
+    JR = J + l1 * N1 + l2 * 0.5 * N2**2
+
+    tr_min_idx = np.unravel_index(np.argmin(JR), JR.shape)
+    t1r_min, t2r_min = t1[tr_min_idx], t2[tr_min_idx]
+
+    levelsJ=(np.exp(np.linspace(0, 1, 20)) - 1) * (np.max(J) - np.min(J)) + np.min(J)
+    levelsJR=(np.exp(np.linspace(0, 1, 20)) - 1) * (np.max(JR) - np.min(JR)) + np.min(JR)
+    levelsN=np.linspace(0, np.max(N), 10)
+
+    path_J = bgd_path(t_init, Xr, yr, l1=0, l2=0)
+    path_JR = bgd_path(t_init, Xr, yr, l1, l2)
+    path_N = bgd_path(np.array([[2.0], [0.5]]), Xr, yr, np.sign(l1)/3, np.sign(l2), core=0)
+
+    ax = axes[i, 0]
+    ax.grid(True)
+    ax.axhline(y=0, color='k')
+    ax.axvline(x=0, color='k')
+    ax.contourf(t1, t2, N / 2., levels=levelsN)
+    ax.plot(path_N[:, 0], path_N[:, 1], "y--")
+    ax.plot(0, 0, "ys")
+    ax.plot(t1_min, t2_min, "ys")
+    ax.set_title(r"$\ell_{}$ penalty".format(i + 1), fontsize=16)
+    ax.axis([t1a, t1b, t2a, t2b])
+    if i == 1:
+        ax.set_xlabel(r"$\theta_1$", fontsize=16)
+    ax.set_ylabel(r"$\theta_2$", fontsize=16, rotation=0)
+
+    ax = axes[i, 1]
+    ax.grid(True)
+    ax.axhline(y=0, color="k")
+    ax.axvline(x=0, color="k")
+    ax.contourf(t1, t2, JR, levels=levelsJR, alpha=0.9)
+    ax.plot(path_JR[:, 0], path_JR[:, 1], "w-o")
+    ax.plot(path_N[:, 0], path_N[:, 1], "y--")
+    ax.plot(0, 0, "ys")
+    ax.plot(t1_min, t2_min, "ys")
+    ax.plot(t1r_min, t2r_min, "rs")
+    ax.set_title(title, fontsize=16)
+    ax.axis([t1a, t1b, t2a, t2b])
+    if i == 1:
+        ax.set_xlabel(r"$theta_1$", fontsize=16)
+plt.show()
+
+# Logistic Regression
+
+t = np.linspace(-10, 10, 100)
+sig = 1 / (1 + np.exp(-t))
+plt.figure(figsize=(9, 3))
+plt.plot([-10, 10], [0, 0], "k-")
+plt.plot([-10, 10], [0.5, 0.5], "k:")
+plt.plot([-10, 10], [1, 1], "k-")
+plt.plot(t, sig, "b-", linewidth=2, label=r"$\sigma(t) = \frac{1}{1 + e^{-t}}$")
+plt.xlabel("t")
+plt.legend(loc="upper left", fontsize=20)
+plt.axis=([-10, 10, -0.1, 1.1])
+plt.show()
+
+
+
+
 
