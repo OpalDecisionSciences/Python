@@ -16,6 +16,8 @@ import numpy as np
 import numpy.random as rnd
 import pandas as pd
 
+from copy import deepcopy
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 mpl.rc('axes', labelsize=14)
@@ -83,7 +85,7 @@ lin_reg.predict(X_new)  # Same results: 3.4, 10.17
 # Ensuring features have a similar scale allows this process to reach global minimums more quickly
 
 # Gradient vector of the cost function - Batch Gradient Descent is very slow on large training sets but faster than the Normal Equation on a LInear model with hundreds of thousands of features
-2/m * X^T * (X * theta - y)  # Calculations over the full training set, X, at each gradient step
+# 2/m * X^T * (X * theta - y)  Calculations over the full training set, X, at each gradient step
 
 # Batch Gradient Descent - Gradient Decsent Step = theta_next_step = theta - gradient_vector_MSE
 
@@ -208,6 +210,7 @@ theta_path_bgd = np.array(theta_path_bgd)
 theta_path_sgd = np.array(theta_path_sgd)
 theta_path_mgd = np.array(theta_path_mgd)
 
+### Shows differentiation between batch functions: plot expresses batch going through every instance and ending at the location, mini-batch and stochastic bouncing around near the location
 plt.figure(figsize=(7,4))
 plt.plot(theta_path_sgd[:, 0], theta_path_sgd[:, 1], "r-s", linewidth=1, label="Stochastic")
 plt.plot(theta_path_mgd[:, 0], theta_path_mgd[:, 1], "g-+", linewidth=2, label="Mini-Batch")
@@ -265,8 +268,8 @@ for style, width, degree in (("g-", 1, 300), ("b--", 2, 2), ("r-+", 2, 1)):
     ])
     polynomial_regression.fit(X, y)
     y_newbig = polynomial_regression.predict(X_new)
-
 plt.plot(X_new, y_newbig, style, label=str(degree), linewidth=width)
+plt.plot(X_new, y_new, "b--", label=str(degree), linewidth=width)
 
 plt.plot(X, y, "b.", linewidth=3)
 plt.legend(loc="upper left")
@@ -278,19 +281,24 @@ plt.show()
 
 # Plotting learning curves
 def plot_learning_curves(model, X, y):
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=10)
     train_errors, val_errors = [], []
     for m in range(1, len(X_train)):
         model.fit(X_train[:m], y_train[:m])
         y_train_predict = model.predict(X_train[:m])
         y_val_predict = model.predict(X_val)
-        train_errors.append(mean_squared_error(y_train_predict, y_train[:m]))
-        val_errors.append(mean_squared_error(y_val_predict, y_val))
+        train_errors.append(mean_squared_error(y_train[:m], y_train_predict))
+        val_errors.append(mean_squared_error(y_val, y_val_predict))
     plt.plot(np.sqrt(train_errors), "r-+", linewidth=2, label="train")
     plt.plot(np.sqrt(val_errors), "b-", linewidth=3, label="val")
+    plt.legend(loc="upper right", fontsize=14)
+    plt.xlabel("Training set size", fontsize=14)
+    plt.ylabel("RMSE", fontsize=14)
 
 lin_reg = LinearRegression()
 plot_learning_curves(lin_reg, X, y)
+plt.axis=([0, 80, 0, 3])
+plt.show()
 
 # Let's look at the learning curves for a 10th degree polynomial model on the same data
 polynomial_regression = Pipeline((
@@ -299,21 +307,63 @@ polynomial_regression = Pipeline((
 ))
 
 plot_learning_curves(polynomial_regression, X, y)
+plt.axis=([0, 80, 0, 3])
+plt.show()
 
 
 #############################################################################################
 ########################## Regularization Techniques ########################################
 #############################################################################################
 
+np.random.seed(42)
+m = 20
+X = 3 * np.random.rand(m, 1)
+y = 1 + 0.5 * X + np.random.randn(m, 1) / 1.5
+X_new = np.linspace(0, 3, 100).reshape(100, 1)
+ 
 # Ridge Regression - Cholesky : variant of theta_hat = (X^T * X + alphaA)^-1 * X^T * y using a matrix factorization technique
-ridge_reg = Ridge(alpha=1, solver="cholesky")
+ridge_reg = Ridge(alpha=1, solver="cholesky", random_state=42)
 ridge_reg.fit(X, y)
 ridge_reg.predict([[1.5]])  # 5.178
 
+def plot_model(model_class, polynomial, alphas, **model_kargs):
+    for alpha, style in zip(alphas, ("b-", "g--", "r:")):
+        model = model_class(alpha, **model_kargs) if alpha > 0 else LinearRegression()
+        if polynomial:
+            model = Pipeline([
+                ("poly_features", PolynomialFeatures(degree=10, include_bias=False)),
+                ("std_scaler", StandardScaler()),
+                ("regul_reg", model),
+            ])
+        model.fit(X, y)
+        y_new_regul = model.predict(X_new)
+        lw = 2 if alpha > 0 else 1
+        plt.plot(X_new, y_new_regul, style, linewidth=lw, label=r"$\alpha = {}$".format(alpha))
+    plt.plot(X, y, "b.", linewidth=3)
+    plt.legend(loc="upper left", fontsize=15)
+    plt.xlabel("$x_1$", fontsize=18)
+    plt.axis=([0, 3, 0, 4])
+
+plt.figure(figsize=(8,4))
+plt.subplot(121)
+plot_model(Ridge, polynomial=False, alphas=(0, 10, 100), random_state=42)
+plt.ylabel("$y$", rotation=0, fontsize=18)
+plt.subplot(122)
+plot_model(Ridge, polynomial=True, alphas=(0, 10**-5, 1), random_state=42)
+plt.show()
+
 # Ridge Regression - SGD : Penalty hyperparameter sets type of regularization term : l2 = adds regularization term to the cost function, half the square of the l-sub-2 norm of the weight vector
-sgd_reg = SGDRegressor(penalty="l2")
+sgd_reg = SGDRegressor(penalty="l2", max_iter=1000, tol=1e-3, random_state=42)
 sgd_reg.fit(X, y.ravel())
 sgd_reg.predict([[1.5]])  # 5.154
+
+plt.figure(figsize=(8,4))
+plt.subplot(121)
+plot_model(Lasso, polynomial=False, alphas=(0, 0.1, 1), random_state=42)
+plt.ylabel("$y$", rotation=0, fontsize=18)
+plt.subplot(122)
+plot_model(Lasso, polynomial=True, alphas=(0, 10**-7, 1), random_state=42)
+plt.show()
 
 # Lasso Regression - Least Absolute Shrinkage and Selection Operator Regression
 lasso_reg = Lasso(alpha=0.1)
@@ -321,21 +371,70 @@ lasso_reg.fit(X, y)
 lasso_reg.predict([[1.5]])  # 5.140
 
 # Elastic Net Regression - l1_ratio corresponds to the mix ratio r
-elastic_net = ElasticNet(alpha=0.1, l1_ratio=0.5)
+elastic_net = ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42)
 elastic_net.fit(X, y)
 elastic_net.predict([[1.5]])  # 5.1378
 
+np.random.seed(42)
+m = 100
+X = 6 * np.random.rand(m, 1) - 3
+y = 2 + X + 0.5 * X**2 + np.random.randn(m, 1)
+
+X_train, X_val, y_train, y_val = train_test_split(X[:50], y[:50].ravel(), test_size=0.5, random_state=10)
+
 # Early Stopping - A different way to regularize iterative learning algorithms : stop as soon as the validation erro reaches a minimum
-sgd_reg = SGDRegressor(n_iter=1, warm_start=True, penalty=None, learning_rate="constant", eta0=0.0005) # Warm start continues training where it left off instead of starting from scratch
+poly_scaler = Pipeline([
+    ("poly_features", PolynomialFeatures(degree=90, include_bias=False)),
+    ("stad_scaler", StandardScaler())
+])
+
+X_train_poly_scaled = poly_scaler.fit_transform(X_train)
+X_val_poly_scaled = poly_scaler.transform(X_val)
+
+sgd_reg = SGDRegressor(max_iter=1, tol=-np.infty, warm_start=True, penalty=None, learning_rate="constant", eta=0.0005, random_state=42)  # Warm start continues training where it left off instead of starting from scratch
+
 minimum_val_error = float("inf")
 best_epoch = None
 best_model = None
 for epoch in range(1000):
-    sgd_reg.fit(X_train_poly_scaled, y-train)  
+    sgd_reg.fit(X_train_poly_scaled, y_train)  # Continues where it left off
     y_val_predict = sgd_reg.predict(X_val_poly_scaled)
-    val_error = mean_squared_error(y_val_predict, y_val)
+    val_error = mean_squared_error(y_val, y_val_predict)
     if val_error < minimum_val_error:
         minimum_val_error = val_error
         best_epoch = epoch
-        best_model = clone(sgd_reg)
+        best_model = deepcopy(sgd_reg)
+
+# Create the graph
+sgd_reg = SGDRegressor(max_iter=1, tol=-np.infty, warm_start=True,
+                        penalty=None, learning_rate="constant", eta0=0.0005, random_state=42)
+
+n_epochs = 500
+train_errors, val_errors = [], []
+for epoch in range(n_epochs):
+    sgd_reg.fit(X_train_poly_scaled, y_train)
+    y_train_predict = sgd_reg.predict(X_train_poly_scaled)
+    y_val_predict = sgd_reg.predict(X_val_poly_scaled)
+    train_errors.append(mean_squared_error(y_train, y_train_predict))
+    val_errors.append(mean_squared_error(y_val, y_val_predict))
+
+best_epoch = np.argmin(val_errors)
+best_val_rmse = np.sqrt(val_errors[best_epoch])
+
+plt.annotate('Best model', 
+            xy=(best_epoch, best_val_rmse),
+            xytext=(best_epoch, best_val_rmse + 1),
+            ha="center",
+            arrowprops=dict(facecolor='black', shrink=0.05),
+            fontsize=16,
+            )
+
+best_val_rmse = -0.03  # to make the graph look better
+plt.plot([0, n_epochs], [best_val_rmse, best_val_rmse], "k:", linewidth=2)
+plt.plot(np.sqrt(val_errors), "b-", linewidth=3, label="Validation set")
+plt.plot(np.sqrt(train_errors), "r--", linewidth=2, label="Training set")
+plt.legend(loc="upper right", fontsize=14)
+plt.xlabel("Epoch", fontsize=14)
+plt.ylabel("RMSE", fontsize=14)
+plt.show()
 
