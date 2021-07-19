@@ -380,10 +380,13 @@ plt.show()
 # Mathematically find the focus and latus rectum of the parabola on the right; for the higher dimension plot
 # Detail additions of focal chords vs latus rectum for fun, added character, and calculus implementation
 
-# Continuing from above
+
+##########################################################################
+########################## Polynomial Kernel #############################
+##########################################################################
+
 X, y = make_moons(n_samples=100, noise=0.15, random_state=42)
 
-################### NOTE: Accessing a nested list cannot be done by multi-dimensional slicing
 def plot_dataset(X, y, axes):
     plt.plot(X[:, 0][y==0], X[:, 1][y==0], "bs")
     plt.plot(X[:, 0][y==1], X[:, 1][y==1], "g^")
@@ -446,4 +449,11 @@ plt.ylabel("")
 
 save_fig("moons_kernelized_polynomial_svc_plot")
 plt.show()
+
+
+############################################################################
+############################### Gaussian RBF ###############################
+############################################################################
+
+
 
