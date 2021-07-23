@@ -24,7 +24,7 @@ from sklearn.datasets import make_moons
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.linear_model import SGDClassifier
-from sklearn.svm import SVC, LinearSVC, SVR
+from sklearn.svm import SVC, LinearSVC, SVR, LinearSVR
 from sklearn.metrics import mean_squared_error
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
@@ -429,7 +429,7 @@ poly_kernel_svm_clf = Pipeline([
 poly_kernel_svm_clf.fit(X, y)
 
 poly100_kernel_svm_clf = Pipeline([
-    ('scaler', StandardScaler()),``
+    ('scaler', StandardScaler()),
     ('svm_clf', SVC(kernel='poly', degree=10, coef0=100, C=5))
 ])
 poly100_kernel_svm_clf.fit(X, y)
@@ -514,14 +514,227 @@ plt.subplots_adjust(right=1)
 save_fig("kernel_method_plot")
 plt.show()
 
+x1_example = X1D[3, 0]
+for landmark in (-2, 1):
+    k = gaussian_rbf(np.array([[x1_example]]), np.array([[landmark]]), gamma)
+    print("Phi({}, {}) = {}".format(x1_example, landmark, k))
+
+rbf_kernel_svm_clf = Pipeline([
+        ("scaler", StandardScaler()),
+        ("svm_clf", SVC(kernel="rbf", gamma=5, C=0.001))
+    ])
+rbf_kernel_svm_clf.fit(X, y)
+
+gamma1, gamma2 = 0.1, 5
+C1, C2 = 0.001, 1000
+hyperparams = (gamma1, C1), (gamma1, C2), (gamma2, C1), (gamma2, C2)
+
+svm_clfs = []
+for gamma, C in hyperparams:
+    rbf_kernel_svm_clf = Pipeline([
+            ("scaler", StandardScaler()),
+            ("svm_clf", SVC(kernel="rbf", gamma=gamma, C=C))
+    ])
+    rbf_kernel_svm_clf.fit(X, y)
+    svm_clfs.append(rbf_kernel_svm_clf)
+
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10.5, 7), sharex=True, sharey=True)
+
+for i, svm_clf in enumerate(svm_clfs):
+    plt.sca(axes[i // 2, i % 2])
+    plot_predictions(svm_clf, [-1.5, 2.45, -1, 1.5])
+    plot_dataset(X, y, [-1.5, 2.45, -1, 1.5])
+    gamma, C = hyperparams[i]
+    plt.title(r"$\gamma = {}, C = {}$".format(gamma, C), fontsize=16)
+    if i in (0, 1):
+        plt.xlabel("")
+    if i in (1, 3):
+        plt.ylabel("")
+
+save_fig("moons_rbf_svc_plot")
+plt.show()
+
+#####################################################################################
+########################### Support Vector Regression ###############################
+#####################################################################################
+
+np.random.seed(42)
+m = 50
+X = 2 * np.random.rand(m, 1)
+y = (4 + 3 * X + np.random.randn(m, 1)).ravel()
+
+svm_reg = LinearSVR(epsilon=1.5, random_state=42)
+svm_reg.fit(X, y)
+
+svm_reg1 = LinearSVR(epsilon=1.5, random_state=42)
+svm_reg2 = LinearSVR(epsilon=0.5, random_state=42)
+svm_reg1.fit(X, y)
+svm_reg2.fit(X, y)
+
+def find_support_vectors(svm_reg, X, y):
+    y_pred = svm_reg.predict(X)
+    off_margin = (np.abs(y - y_pred) >= svm_reg.epsilon)
+    return np.argwhere(off_margin)
+
+svm_reg1.support_ = find_support_vectors(svm_reg1, X, y)
+svm_reg2.support_ = find_support_vectors(svm_reg2, X, y)
+
+eps_x1 = 1
+eps_y_pred = svm_reg1.predict([[eps_x1]])
+
+def plot_svm_regression(svm_reg, X, y, axes):
+    x1s = np.linspace(axes[0], axes[1], 100).reshape(100, 1)
+    y_pred = svm_reg.predict(x1s)
+    plt.plot(x1s, y_pred, "k-", linewidth=2, label=r"$\hat{y}$")
+    plt.plot(x1s, y_pred + svm_reg.epsilon, "k--")
+    plt.plot(x1s, y_pred - svm_reg.epsilon, "k--")
+    plt.scatter(X[svm_reg.support_], y[svm_reg.support_], s=180, facecolors='#FFAAAA')
+    plt.plot(X, y, "bo")
+    plt.xlabel(r"$x_1$", fontsize=18)
+    plt.legend(loc="upper left", fontsize=18)
+    plt.axis=(axes)
+
+fig, axes = plt.subplots(ncols=2, figsize=(9, 4), sharey=True)
+plt.sca(axes[0])
+plot_svm_regression(svm_reg1, X, y, [0, 2, 3, 11])
+plt.title(r"$\epsilon = {}$".format(svm_reg1.epsilon), fontsize=18)
+plt.ylabel(r"$y$", fontsize=18, rotation=0)
+# plt.plot([eps_x1, eps_x1], [eps_y_pred, eps_y_pred = svm.reg1.epsilon], "k-", linewidth=2)
+plt.annotate(
+    '', xy=(eps_x1, eps_y_pred), xycoords='data',
+    xytext=(eps_x1, eps_y_pred - svm_reg1.epsilon),
+    textcoords='data', arrowprops={'arrowstyle': '<->', 'linewidth':1.5}
+)
+plt.text(0.91, 5.6, r"$\epsilon$", fontsize=20)
+plt.sca(axes[1])
+plot_svm_regression(svm_reg2, X, y, [0, 2, 3, 11])
+plt.title(r"$\epsilon = {}$".format(svm_reg2.epsilon), fontsize=18)
+save_fig("svm_regression_plot")
+plt.show()
 
 
+np.random.seed(42)
+m = 100
+X = 2 * np.random.rand(m, 1) - 1
+y = (0.2 + 0.1 * X + 0.5 * X**2 + np.random.randn(m, 1)/10).ravel()
+
+svm_poly_reg = SVR(kernel="poly", degree=2, C=100, epsilon=0.1, gamma="scale")
+svm_poly_reg.fit(X, y)
+
+svm_poly_reg1 = SVR(kernel="poly", degree=2, C=100, epsilon=0.1, gamma="scale")
+svm_poly_reg2 = SVR(kernel="poly", degree=2, C=0.01, epsilon=0.1, gamma="scale")
+svm_poly_reg1.fit(X, y)
+svm_poly_reg2.fit(X, y)
+
+fig, axes = plt.subplots(ncols=2, figsize=(9, 4), sharey=True)
+plt.sca(axes[0])
+plot_svm_regression(svm_poly_reg1, X, y, [-1, 1, 0, 1])
+plt.title(r"$degree={}, C={}, \epsilon = {}$".format(svm_poly_reg1.degree, svm_poly_reg1.C, svm_poly_reg1.epsilon), fontsize=18)
+plt.ylabel(r"$y$", fontsize=18, rotation=0)
+plt.sca(axes[1])
+plot_svm_regression(svm_poly_reg2, X, y, [-1, 1, 0, 1])
+plt.title(r"$degree={}, C={}, \epsilon = {}$".format(svm_poly_reg2.degree, svm_poly_reg2.C, svm_poly_reg2.epsilon), fontsize=18)
+save_fig("svm_with_polynomial_kernel_plot")
+plt.show()
 
 
+############################################################################
+############################### Under the Hood #############################
+############################################################################
+
+iris = datasets.load_iris()
+X = iris["data"][:, (2, 3)]  # petal length, petal width
+y = (iris["target"] == 2).astype(np.float64)  # Iris virginica
+def plot_3D_decision_function(ax, w, b, x1_lim=[4, 6], x2_lim=[0.8, 2.8]):
+    x1_in_bounds = (X[:, 0] > x1_lim[0]) & (X[:, 0] < x1_lim[1])
+    X_crop = X[x1_in_bounds]
+    y_crop = y[x1_in_bounds]
+    x1s = np.linspace(x1_lim[0], x1_lim[1], 20)
+    x2s = np.linspace(x2_lim[0], x2_lim[1], 20)
+    x1, x2 = np.meshgrid(x1s, x2s)
+    xs = np.c_[x1.ravel(), x2.ravel()]
+    df = (xs.dot(w) + b).reshape(x1.shape)
+    m = 1 / np.linalg.norm(w)
+    boundary_x2s = -x1s*(w[0]/w[1])-b/w[1]
+    margin_x2s_1 = -x1s*(w[0]/w[1])-(b-1)/w[1]
+    margin_x2s_2 = -x1s*(w[0]/w[1])-(b+1)/w[1]
+    ax.plot_surface(x1s, x2, np.zeros_like(x1), color="b", alpha=0.2, cstride=100, rstride=100)
+    ax.plot(x1s, boundary_x2s, 0, "k-", linewidth=2, label=r"$h=0$")
+    ax.plot(x1s, margin_x2s_1, 0, "k--", linewidth=2, label=r"$h=\pm 1$")
+    ax.plot(x1s, margin_x2s_2, 0, "k--", linewidth=2)
+    ax.plot(X_crop[:, 0][y_crop==1], X_crop[:, 1][y_crop==1], 0, "g^")
+    ax.plot_wireframe(x1, x2, df, alpha=0.3, color="k")
+    ax.plot(X_crop[:, 0][y_crop==0], X_crop[:, 1][y_crop==0], 0, "bs")
+    ax.axis(x1_lim + x2_lim)
+    ax.text(4.5, 2.5, 3.8, "Decision function $h$", fontsize=16)
+    ax.set_xlabel(r"Petal length", fontsize=16, labelpad=10)
+    ax.set_ylabel(r"Petal width", fontsize=16, labelpad=10)
+    ax.set_zlabel(r"$h = \mathbf{w}^T \mathbf{x} + b$", fontsize=18, labelpad=5)
+    ax.legend(loc="upper left", fontsize=16)
+
+fig = plt.figure(figsize=(11, 6))
+ax1 = fig.add_subplot(111, projection='3d')
+plot_3D_decision_function(ax1, w=svm_clf2.coef_[0], b=svm_clf2.intercept_[0])
+
+save_fig("iris_3D_plot")
+plt.show()
 
 
+####################################################################################
+################## Small Weight Vector Results in a Large Margin ###################
+####################################################################################
+
+def plot_2D_decision_function(w, b, ylabel=True, x1_lim=[-3, 3]):
+    x1 = np.linspace(x1_lim[0], x1_lim[1], 200)
+    y = w * x1 + b
+    m = 1 / w
+
+    plt.plot(x1, y)
+    plt.plot(x1_lim, [1, 1], "k:")
+    plt.plot(x1_lim, [-1, -1], "k:")
+    plt.axhline(y=0, color='k')
+    plt.axvline(x=0, color='k')
+    plt.plot([m, m], [0, 1], "k--")
+    plt.plot([-m, -m], [0, -1], "k--")
+    plt.plot([-m, m], [0, 0], "k-o", linewidth=3)
+    plt.plot(x1_lim + [-2, 2])
+    plt.xlabel(r"$x_1$", fontsize=16)
+    if ylabel:
+        plt.ylabel(r"$w_1 X 1$  ", rotation=0, fontsize=16)
+    plt.title(r"$w_1 = {}$".format(w), fontsize=16)
+
+fig, axes = plt.subplots(ncols=2, figsize=(9, 3.2), sharey=True)
+plt.sca(axes[0])
+plot_2D_decision_function(1, 0)
+plt.sca(axes[1])
+plot_2D_decision_function(0.5, 0, ylabel=False)
+save_fig("small_w_large_margin_plot")
+plt.show()
+
+# Take X and y from iris 3D plot above
+svm_clf = SVC(kernel="linear", C=1)
+svm_clf.fit(X, y)
+svm_clf.predict([[5.3, 1.3]])
 
 
+##############################################################################
+############################### Hinge Loss ###################################
+##############################################################################
+
+t = np.linspace(-2, 4, 200)
+h = np.where(1 - t < 0, 0, 1 - t)  # max(0, 1-t)
+
+plt.figure(figsize=(5, 2.8))
+plt.plot(t, h, "b-", linewidth=2, label="$max(0, 1 - t)$")
+plt.grid(True, which='both')
+plt.axhline(y=0, color='k')
+plt.axvline(x=0, color='k')
+plt.yticks(np.arange(-1, 2.5, 1))
+plt.xlabel("$t$", fontsize=16)
+plt.axis=([-2, 4, -1, 2.5])
+plt.legend(loc="upper right", fontsize=16)
+save_fig("hinge_plot")
+plt.show()
 
 
 
