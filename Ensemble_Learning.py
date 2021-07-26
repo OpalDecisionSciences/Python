@@ -398,10 +398,53 @@ plt.xlabel("$x_1$", fontsize=16)
 save_fig("early_stopping_gbrt_plot")
 plt.show()
 
+gbrt = GradientBoostingRegressor(max_depth=2, warm_start=True, random_state=42)
+
+min_val_error = float("inf")
+error_going_up = 0
+for n_estimators in range(1, 120):
+    gbrt.n_estimators = n_estimators
+    gbrt.fit(X_train, y_train)
+    y_pred = gbrt.predict(X_val)
+    val_error = mean_squared_error(y_val, y_pred)
+    if val_error < min_val_error:
+        min_val_error = val_errorerror_going_up = 0
+    else:
+        error_going_up += 1
+        if error_going_up == 5:
+            break  # early stopping
+
+print(gbrt.n_estimators)
+print("Minimum validation MSE:", min_val_error)
 
 
+#################################################################################
+################################ Using XGBoost ##################################
+#################################################################################
 
+try:
+    import xgboost
+except ImportError as ex:
+    print("Error: the xgboost library is not installed.")
+    xgboost = None
 
+if xgboost is not None:
+    xgb_reg = xgboost.XGBRegressor(random_state=42)
+    xgb_reg.fit(X_train, y_train)
+    y_pred = xgb_reg.predict(X_val)
+    val_error = mean_squared_error(y_val, y_pred)
+    print("Validation MSE:", val_error)
+
+if xgboost is not None:
+    xgb_reg.fit(X_train, y_train,
+                eval_set=[(X_val, y_val)], early_stopping_rounds=2)
+    y_pred = xgb_reg.predict(X_val)
+    val_error = mean_squared_error(y_val, y_pred)
+    print("Validation MSE:", val_error)
+
+%timeit xgboost.XGBRegressor().fit(X_train, y_train) if xgboost is not None else None
+
+%timeit GradientBoostingRegressor().fit(X_train, y_train)
 
 
 
