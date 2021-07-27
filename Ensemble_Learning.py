@@ -1,6 +1,7 @@
 
 # Reference: 'Hands-On Machine Learning with SciKit Learn & TensorFlow Concepts, Tools, and Techniques to Build Intelligent Systems' First Edition; Geron, Aurelien; O'Reilly, 2017
 
+# Import packages
 import os
 import sys
 
@@ -28,7 +29,7 @@ np.random.seed(42)
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 IMAGES_PATH = CURRENT_DIR + '\\'
 
-
+# Save Images
 def save_fig(fig_id, tight_layout=True, fig_extension="png", resolution=300):
     path = os.path.join(IMAGES_PATH, fig_id + "." + fig_extension)
     print("Saving figure", fig_id)
