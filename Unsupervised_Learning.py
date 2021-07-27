@@ -9,8 +9,11 @@ import pandas as pd
 import sklearn
 
 from scipy import stats
+import urllib.request
+from timeit import timeit
 
 from matplotlib import interactive
+from matplotlib.ticker import FixedLocator, FixedFormatter
 import matplotlib as mpl
 mpl.__file__  # Find file location where mpl is installed
 mpl.get_configdir()  # mpl configuration and cache directory locations
@@ -19,9 +22,11 @@ mpl.rc('axes', labelsize=14)
 mpl.rc('xtick', labelsize=12)
 mpl.rc('ytick', labelsize=12)
 
-from sklearn.datasets import load_iris, make_blobs
+from sklearn.datasets import load_iris, make_blobs, fetch_openml
 from sklearn.mixture import GaussianMixture
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import silhouette_score, silhouette_samples
 
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 IMAGES_PATH = CURRENT_DIR + "\\"
@@ -310,6 +315,240 @@ plt.show()  # We end up with the original model, the optimal K-Means solution (a
 #################################################################
 ######################### K-Means++ #############################
 #################################################################
+
+# K-Means++ is the default initialization: init="k-means++"
+
+KMeans()
+
+good_init = np.array([[-3, 3], [-3, 2], [-3, 1], [-1, 2], [0, 2]])
+kmeans = KMeans(n_clusters=5, init=good_init, n_init=1, random_state=42)
+kmeans.fit(X)
+kmeans.inertia_
+
+#############################################################################
+############################# Acclerated K-Means ############################
+#############################################################################
+
+# Accelerated K-Means with pythagorean theorem and triangle inequalities such that AC <= AB + BC
+# Elkan does not support sparse data, for sparse data use the regular k-means algorithm "full"
+
+# Time it
+%timeit -n 50 KMeans(algorithm="elkan", random_state=42).fit(X)
+%timeit -n 50 kMeans(algorithm="full", random_state=42).fit(X)
+
+
+########################################################################
+########################## Mini-Batch K-Means ##########################
+########################################################################
+
+minibatch_kmeans = MiniBatchKMeans(n_clusters=5, random_state=42)
+minibatch_kmeans.fit(X)
+
+minibatch_kmeans.inertia_
+
+
+# fetch_openML() returns a Pandas DataFrame by default, use as_frame=False to avoid this
+mnist = fetch_openml('mnist_784', version=1, as_frame=False)
+mnist.target = mnist.target.astype(np.int64)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    mnist["data"], mnist["target"], random_state=42
+)
+
+# Write it to a memmap
+filename = "my_mnist_data"
+X_mm = np.memmap(filename, dtype='float32', mode='write', shape=X_train.shape)
+X_mm[:] = X_train
+
+# Large data sets cannot take advanctage of memmap, so write a function to load the next batch
+def load_next_batch(batch_size):
+    return X[np.random.choice(len(X), batch_size, replace=False)]
+
+# Train the model by feeding it one batch at a time, 
+# implement multiple initializations, 
+# and keep model with the lowest inertia
+
+np.random.seed(42)
+
+k = 5
+n_init = 10
+n_iterations = 100
+batch_size = 100
+init_size = 500
+evaluate_on_last_n_iters = 10
+
+best_kmeans = None
+
+for init in range(n_init):
+    minibatch_kmeans = MiniBatchKMeans(n_clusters=k, init_size=init_size)
+    X_init = load_next_batch(init_size)
+    minibatch_kmeans.partial_fit(X_init)
+
+    minibatch_kmeans.sum_inertia_ = 0
+    for iteration in range(n_iterations):
+        X_batch = load_next_batch(batch_size)
+        minibatch_kmeans.partial_fit(X_batch)
+        if iteration >= n_iterations - evaluate_on_last_n_iters:
+            minibatch_kmeans.sum_inertia_ += minibatch_kmeans.inertia_
+    
+    if (best_kmeans is None or
+        minibatch_kmeans.sum_inertia_ < best_kmeans.sum_inertia_):
+        best_kmeans = minibatch_kmeans
+
+best_kmeans.score(X)
+
+# Time it
+%timeit KMeans(n_clusters=5, random_state=42).fit(X)
+%timeit MiniBatchKMeans(n_clusters=5, random_state=42)
+
+# Minibatch is much faster than regular kmeans
+# Minibatch performance is often lower (having a higher inertia)
+# Plot inertia ratio and training time ratio between minibatch K-Means and regular K-Means
+
+times = np.empty((100, 2))
+inertias = np.empty((100, 200))
+for k in range(1, 101):
+    kmeans_ = KMeans(n_clusters=k, random_state=42)
+    minibatch_kmeans = MiniBatchKMeans(n_clusters=k, random_state=42)
+    print("\r{}/{}".format(k, 100), end="")
+    times[k-1, 0] = timeit("kmeans_.fit(X)", number=10, globals=globals())
+    times[k-1, 1] = timeit("minibatch_kmeans.fit(X)", number=10, globals=globals())
+    inertias[k-1, 0] = kmeans_.inertia_
+    inertias[k-1, 1] = minibatch_kmeans.inertia_
+
+plt.figure(figsize=(10,4))
+
+plt.subplot(121)
+plt.plot(range(1, 101), inertias[:, 0], "r--", label="K-Means")
+plt.plot(range(1, 101), inertias[:, 1], "b.-", label="Mini-batch K-Means")
+plt.xlabel("$k$", fontsize=16)
+plt.title("Inertia", fontsize=14)
+plt.legend(fontsize=14)
+plt.axis=([1, 100, 0, 100])
+plt.ylim([0, 100])
+plt.xlim([0, 100])
+
+plt.subplot(122)
+plt.plot(range(1, 101), times[:, 0], "r--", label="K-Means")
+plt.plot(range(1, 101), times[:, 1], "b.-", label="mini-batch K-Means")
+plt.xlabel("$k$", fontsize=16)
+plt.title("Training time (seconds)", fontsize=14)
+plt.axis=([1, 100, 0, 6])
+plt.ylim([0, 6])
+plt.xlim([1, 100])
+
+save_fig("minibatch_kmeans_vs_kmeans")
+plt.show()
+
+
+########################################################################
+################### Finding Optimal Number of CLusters #################
+########################################################################
+
+kmeans_k3 = KMeans(n_clusters=3, random_state=42)
+kmeans_k8 = KMeans(n_clusters=8, random_state=42)
+
+plot_clusterer_comparison(kmeans_k3, kmeans_k8, X, "$k=3$", "$k=8$")
+save_fig("bad_n_clusters_plot")
+plt.show()
+
+kmeans_k3.inertia_
+kmeans_k8.inertia_
+
+# The more clusters, the closer each instance will be to its closest centroid, 
+# therefore the inertia will keep getting lower as we increase k
+# Plot the inertia as a function of k and analyze the results
+
+kmeans_per_k = [KMeans(n_clusters=k, random_state=42).fit(X)
+            for k in range(1, 10)]
+inertias = [model.inertia_ for model in kmeans_per_k]
+
+plt.figure(figsize=(8, 3.5))
+plt.plot(range(1, 10), inertias, "bo-")
+plt.xlabel("$k$", fontsize=14)
+plt.ylabel("Inertia", fontsize=14)
+plt.annotate('Elbow',
+            xy=(4, inertias[3]),
+            xytext=(0.55, 0.55),
+            textcoords='figure fraction',
+            fontsize=16,
+            arrowprops=dict(facecolor='black', shrink=0.1)
+            )
+plt.axis=([1, 8.5, 0, 1300])
+
+# elboaw at k=4 means less clusters is bad and more clusters will not help much, 
+# so k=4 is a pretty good choice, except for two clusters being grouped into one single cluster
+
+plot_decision_boundaries(kmeans_per_k[4-1], X)
+plt.show()
+
+
+# silhouette coefficient = (b - a) / max(a, b); between -1 & 1, where -1 means potential assignment 
+# to the wrong cluster, 0 means on a cluster boundary, and 1 means the instance is well inside it's own cluster
+# a = mean intra-cluster distance (the mean distance to other instances in the same cluster)
+# b = mean nearest-cluster distance (mean distance to instances of the next closest cluster, 
+# defined as the one that minimizes b not including the istance's own cluster)
+
+# Plot the silhouette score as a fnuction of k
+silhouette_score(X, kmeans.labels_)
+
+silhouette_scores = [silhouette_score(X, model.labels_)
+                    for model in kmeans_per_k[1:]]
+
+plt.figure(figsize=(8, 3))
+plt.plot(range(2, 10), silhouette_scores, "bo-")
+plt.xlabel("$k$", fontsize=14)
+plt.ylabel("Silhouette score", fontsize=14)
+plt.axis=([1.8, 8.5, 0.55, 0.7])
+save_fig("silhouette_score_vs_k_plot")
+plt.show()
+
+plt.figure(figsize=(11, 9))
+
+for k in (3, 4, 5, 6):
+    plt.subplot(2, 2, k - 2)
+
+    y_pred = kmeans_per_k[k - 1].labels_
+    silhouette_coefficients = silhouette_samples(X, y_pred)
+
+    padding = len(X) // 30
+    pos = padding
+    ticks = []
+    for i in range(k):
+        coeffs = silhouette_coefficients[y_pred == i]
+        coeffs.sort()
+
+        color = mpl.cm.Spectral(i / k)
+        plt.fill_betweenx(np.arange(pos, pos + len(coeffs)), 0, coeffs, facecolor=color, edgecolor=color, alpha=0.7)
+        ticks.append(pos + len(coeffs) // 2)
+        pos += len(coeffs) + padding
+    
+    plt.gca().yaxis.set_major_locator(FixedLocator(ticks))
+    plt.gca().yaxis.set_major_formatter(FixedFormatter(range(k)))
+    if k in (3, 5):
+        plt.ylabel("Cluster")
+    
+    if k in (5, 6): 
+        plt.gca().set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+        plt.xlabel("Silhouette Coefficient")
+    else:
+        plt.tick_params(labelbottom=False)
+    
+    plt.axvline(x=silhouette_scores[k - 2], color="red", linestyle="--")
+    plt.title("$k={}$".format(k), fontsize=16)
+
+save_fig("silhouette_analysis_plot")
+plt.show()
+########## Above plot shows k=5 as best option because all clusters are roughly the same size and 
+######### they all cross the dashed line, which represents the mean silhouette score
+
+
+###################### Limits of K-Means ####################
+
+
+
+
+
 
 
 
