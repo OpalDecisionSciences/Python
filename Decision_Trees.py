@@ -37,6 +37,7 @@ def save_fig(fig_id, tight_layout=True, fig_extension="png", resolution=300):
         plt.tight_layout()
     plt.savefig(path, format=fig_extension, dpi=resolution)
 
+# Load data
 iris = load_iris()
 X = iris.data[:, 2:]  # petal length and width
 y = iris.target
